@@ -1,0 +1,160 @@
+#四分类文件数据是完整的列数，也是只要更改路径即可
+
+import pandas as pd 
+import numpy as np
+data=pd.read_csv('0-40.txt',sep=' ',header=None)
+
+data = data.drop(data.columns[[26]],axis=1)
+new_column_names = ['0','1','x1','x2','x3','x4','x5','x6','x7','x8','x9','x10','x11','x12','x13','x14', 'x15', 'x16', 'x17','x18','x19','x20','x21','x22','x23', 'x24','y']  # 替换成你想要的新列名
+data.columns = new_column_names
+data.iloc[:, -1] = np.where(data.iloc[:, -1] > 125, 125, data.iloc[:, -1])
+
+data = data.drop(data.columns[[4]], axis=1)
+data = data.drop(data.columns[[4]], axis=1)
+data = data.drop(data.columns[[7]], axis=1)
+data = data.drop(data.columns[[11]], axis=1)
+data = data.drop(data.columns[[16]], axis=1)
+data = data.drop(data.columns[[17]], axis=1)
+data = data.drop(data.columns[[17]], axis=1)
+
+data = data.drop(data.columns[[0]], axis=1)
+data = data.drop(data.columns[[0]], axis=1)
+
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+
+# 选取前 13 列的数据
+data_to_normalize = data.iloc[:,:-1]
+
+# 创建 MinMaxScaler
+scaler = MinMaxScaler()
+
+# 调用 fit_transform 进行归一化
+normalized_data = scaler.fit_transform(data_to_normalize)
+
+# 将归一化后的数据替换回原数据中的对应位置
+data.iloc[:, :-1] = normalized_data
+print(data)#可查看一下数据是否为18列
+
+
+
+import numpy as np
+from minepy import MINE
+import matplotlib.pyplot as plt
+num_cols = data.shape[1]
+mic_matrix = np.zeros((num_cols, num_cols))
+
+for i in range(0, num_cols):
+    for j in range(0, num_cols):
+        if i != j:
+            mine = MINE()
+            mine.compute_score(data.iloc[:, i], data.iloc[:, j])
+            mic_matrix[i, j] = mine.mic()
+
+mic_matrix1=mic_matrix[mic_matrix!=0]
+mic=np.mean(mic_matrix1)
+# 基于均值和标准差计算阈值
+
+th=np.percentile(mic_matrix1, 25)
+print('th',th)
+
+
+
+import numpy as np
+
+def revm_algorithm(x, y, p, length):
+    # 根据伪代码，计算Δ1 和 Δ2
+    delta1 = (np.max(x) - np.min(x)) / (2 * p)
+    delta2 = (np.max(y) - np.min(y)) / (2 * p)
+
+    # 随机生成 len 个下标
+    pointers = np.random.choice(length, length, replace=False)
+
+    # 根据伪代码的定义，获取 Xt, Yt, Y(t+1) 和 X(t+1)
+    Xt = x.iloc[pointers]
+    Yt = y.iloc[pointers]
+    Yt1 = y.iloc[np.roll(pointers, -1)]
+    Xt1 = x.iloc[np.roll(pointers, -1)]
+
+    # 创建区间序列
+    Lx = np.arange(np.min(x) + delta1, np.max(x), delta1)
+    Ly = np.arange(np.min(y) + delta2, np.max(y), delta2)
+
+    # 创建统计矩阵
+    stat = np.zeros((p, p, 3))
+
+    # 统计数据点在各区间的分布情况
+    for i in range(p):
+        for j in range(p):
+            count = np.sum((Lx[i] - delta1 <= Xt) & (Xt <= Lx[i] + delta1) & (Ly[j] - delta2 <= Yt) & (Yt <= Ly[j] + delta2))
+            stat[i, j, 2] = count
+
+    # 计算概率分布
+    px_y = stat[:, :, 2] / np.sum(stat[:, :, 2])
+
+    return px_y
+
+def calculate_transfer_entropy(x, y, p, length):
+    # Here, we will calculate the transfer entropy based on the joint probabilities from REVM algorithm
+    # Transfer entropy will be based on the formula T(X->Y) = sum( p(xt+1, yt, xt) * log( p(xt+1|yt, xt) / p(xt+1|xt) ) )
+    # But, first, we need to compute the joint and conditional probabilities which is beyond the pseudo code
+    # Let's get joint probabilities using REVM:
+    
+    joint_probabilities = revm_algorithm(x, y, p, length)
+    
+    # Compute other required probabilities for transfer entropy
+    # This is a simplified version and may not give the correct transfer entropy, but illustrates the process
+    
+    px_t1_yt_xt = joint_probabilities # This is a simplification
+    px_t1_xt = np.sum(joint_probabilities, axis=1)
+    px_t1_given_yt_xt = px_t1_yt_xt / np.sum(px_t1_yt_xt, axis=0)
+    px_t1_given_xt = px_t1_xt / np.sum(px_t1_xt)
+
+    # Now, compute the transfer entropy
+    TE = np.sum(px_t1_yt_xt * np.log(px_t1_given_yt_xt / px_t1_given_xt))
+    
+    return TE
+# 导入所需的库
+import networkx as nx
+import matplotlib.pyplot as plt
+
+# 创建因果关系图
+causal_graph = nx.DiGraph()
+causal_graph.add_nodes_from(range(0,num_cols))
+
+def add_edge_no_nan(graph, source, target, **kwargs):
+        if 'weight' in kwargs and not np.isnan(kwargs['weight']):
+            graph.add_edge(source, target, **kwargs)
+
+
+# 对于强相关组中的每一对特征，计算传递熵并添加边及方向到因果关系图
+for i in range(0,num_cols):
+    for j in range(i, num_cols):
+        if mic_matrix[i, j] > th:
+            transfer_entropy1 = calculate_transfer_entropy(data.iloc[:, i], data.iloc[:, j], 2,len(data.iloc[:, i]))
+            transfer_entropy2 = calculate_transfer_entropy(data.iloc[:, j], data.iloc[:, i], 2,len(data.iloc[:, j]))
+                
+            if transfer_entropy1 >= transfer_entropy2:
+                add_edge_no_nan(causal_graph,i, j, weight=transfer_entropy1)
+            else:
+                add_edge_no_nan(causal_graph,j, i, weight=transfer_entropy2)
+                # 输出传递熵结果
+
+# 可视化因果关系图
+desired_node_names = ['x1', 'x2', 'x5', 'x6', 'x7', 'x9', 'x10', 'x11', 'x12', 'x14', 'x15', 'x16', 'x17', 'x18', 'x20', 'x23', 'x24', 'y']
+
+# 创建节点名称字典
+node_labels = {node: desired_node_names[i] for i, node in enumerate(causal_graph.nodes)}
+'''
+node_labels = {node: node + 1 for node in causal_graph.nodes}
+'''
+pos = nx.circular_layout(causal_graph)
+
+edge_labels = nx.get_edge_attributes(causal_graph, 'weight')
+plt.figure(figsize=(8, 6))
+nx.draw_networkx(causal_graph, pos, with_labels=True,labels=node_labels, node_size=300, node_color='lightblue')
+nx.draw_networkx_edge_labels(causal_graph, pos, edge_labels={})
+plt.title('Causal Relationship Graph')
+plt.show()
+
+
