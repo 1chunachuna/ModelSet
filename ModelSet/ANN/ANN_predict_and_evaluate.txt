@@ -1,0 +1,18 @@
+功能描述:
+
+使用训练好的模型进行预测，并计算误差指标。
+所需的包:
+
+sklearn.metrics (mean_squared_error)
+numpy (np)
+参数列表:
+
+model: 训练好的模型
+X_test_scaled: 测试集特征
+y_test: 测试集标签
+
+from sklearn.metrics import mean_squared_error
+import numpy as np
+
+def predict_and_evaluate(model, X_test_scaled, y_test):
+    y_pred = model.predict(X_test_scaled)
